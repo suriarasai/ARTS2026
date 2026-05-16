@@ -1,4 +1,13 @@
-confluent-kafka==2.8.0
-python-dotenv==1.0.1
-pydantic==2.10.0
-kafka-python-ng==2.2.3
+# requirements.txt — install with: pip install -r requirements.txt
+#
+# All packages below ship pre-built wheels for Python 3.12, 3.13, and 3.14
+# on Windows, macOS, and Linux — no C compiler required.
+
+# Kafka client (wraps librdkafka; includes Avro/Schema Registry support)
+confluent-kafka[schemaregistry,avro]==2.14.0
+
+# Data validation and serialisation
+pydantic==2.11.4
+
+# .env file loading
+python-dotenv==1.1.0

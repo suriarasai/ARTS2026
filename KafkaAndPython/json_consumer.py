@@ -3,12 +3,16 @@ json_consumer.py — JSON-deserialised Kafka consumer with Pydantic validation.
 
 Consumes SensorReading messages from the local Podman Kafka container
 (KAFKA_ENV=local) or Confluent Cloud (KAFKA_ENV=cloud).
+
+Windows-compatible: uses signal.signal() + threading.Event instead of
+loop.add_signal_handler() which is Unix-only.
 """
 
 import asyncio
 import logging
 import os
 import signal
+import threading
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 from dotenv import load_dotenv
@@ -24,18 +28,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_shutdown = asyncio.Event()
+# ── Signal handling (Windows + Unix) ─────────────────────────────────────────
+_shutdown = threading.Event()
+
+
+def _handle_signal(sig, frame) -> None:
+    logger.warning("Signal %s received — shutting down …", sig)
+    _shutdown.set()
+
+
+signal.signal(signal.SIGINT,  _handle_signal)
+signal.signal(signal.SIGTERM, _handle_signal)
 
 
 # ── Pydantic model ─────────────────────────────────────────────────────────────
 
 class SensorReading(BaseModel):
-    reading_id: str
-    sensor_id: str
-    location: str
+    reading_id:  str
+    sensor_id:   str
+    location:    str
     temperature: float
-    humidity: float
-    timestamp: int
+    humidity:    float
+    timestamp:   int
 
     @field_validator("temperature")
     @classmethod
@@ -52,13 +66,6 @@ class SensorReading(BaseModel):
         return v
 
 
-# ── Signal handling ───────────────────────────────────────────────────────────
-
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown.set)
-
-
 # ── Business logic ────────────────────────────────────────────────────────────
 
 async def _process_reading(reading: SensorReading) -> None:
@@ -71,8 +78,10 @@ async def _process_reading(reading: SensorReading) -> None:
         reading.humidity,
     )
     if reading.temperature > 35.0:
-        logger.warning("🌡  HIGH TEMP ALERT  sensor=%s  temp=%.1f°C",
-                       reading.sensor_id, reading.temperature)
+        logger.warning(
+            "🌡  HIGH TEMP ALERT  sensor=%s  temp=%.1f°C",
+            reading.sensor_id, reading.temperature,
+        )
     await asyncio.sleep(0)
 
 
@@ -125,12 +134,4 @@ async def consume_json_messages(
 
 if __name__ == "__main__":
     TOPIC = os.getenv("SENSOR_TOPIC", "sensor-readings")
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    _install_signal_handlers(loop)
-
-    try:
-        loop.run_until_complete(consume_json_messages(TOPIC))
-    finally:
-        loop.close()
+    asyncio.run(consume_json_messages(TOPIC))

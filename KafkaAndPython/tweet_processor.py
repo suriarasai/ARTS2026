@@ -8,6 +8,9 @@ Run modes (--mode flag):
   produce   → publish sample raw tweets to RAW_TWEET_TOPIC
   consume   → consume, enrich, and forward to ENRICHED_TWEET_TOPIC
   pipeline  → both concurrently (default)
+
+Windows-compatible: uses signal.signal() + threading.Event instead of
+loop.add_signal_handler() which is Unix-only.
 """
 
 import argparse
@@ -16,6 +19,7 @@ import logging
 import os
 import re
 import signal
+import threading
 import time
 import uuid
 
@@ -33,22 +37,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_shutdown = asyncio.Event()
+# ── Signal handling (Windows + Unix) ─────────────────────────────────────────
+_shutdown = threading.Event()
 
-RAW_TOPIC      = os.getenv("RAW_TWEET_TOPIC",       "tweet-ingestion")
-ENRICHED_TOPIC = os.getenv("ENRICHED_TWEET_TOPIC",  "tweet-processed")
+
+def _handle_signal(sig, frame) -> None:
+    logger.warning("Signal %s received — shutting down …", sig)
+    _shutdown.set()
+
+
+signal.signal(signal.SIGINT,  _handle_signal)
+signal.signal(signal.SIGTERM, _handle_signal)
+
+RAW_TOPIC      = os.getenv("RAW_TWEET_TOPIC",      "tweet-ingestion")
+ENRICHED_TOPIC = os.getenv("ENRICHED_TWEET_TOPIC", "tweet-processed")
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class RawTweet(BaseModel):
-    tweet_id: str     = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_handle: str
-    text: str
-    language: str     = "en"
-    created_at: int   = Field(default_factory=lambda: int(time.time() * 1000))
+    tweet_id:      str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_handle:   str
+    text:          str
+    language:      str = "en"
+    created_at:    int = Field(default_factory=lambda: int(time.time() * 1000))
     retweet_count: int = 0
-    like_count: int    = 0
+    like_count:    int = 0
 
     @field_validator("user_handle")
     @classmethod
@@ -57,25 +71,25 @@ class RawTweet(BaseModel):
 
 
 class EnrichedTweet(BaseModel):
-    tweet_id: str
-    user_handle: str
-    text: str
-    language: str
-    created_at: int
-    retweet_count: int
-    like_count: int
-    hashtags: list[str]
-    mentions: list[str]
-    url_count: int
-    sentiment_label: str       # "positive" | "neutral" | "negative"
-    word_count: int
-    processed_at: int = Field(default_factory=lambda: int(time.time() * 1000))
+    tweet_id:        str
+    user_handle:     str
+    text:            str
+    language:        str
+    created_at:      int
+    retweet_count:   int
+    like_count:      int
+    hashtags:        list[str]
+    mentions:        list[str]
+    url_count:       int
+    sentiment_label: str    # "positive" | "neutral" | "negative"
+    word_count:      int
+    processed_at:    int = Field(default_factory=lambda: int(time.time() * 1000))
 
 
 # ── Enrichment ────────────────────────────────────────────────────────────────
 
-_POSITIVE = {"great", "awesome", "love", "excellent", "fantastic", "happy", "good", "best", "amazing"}
-_NEGATIVE = {"bad", "terrible", "hate", "awful", "horrible", "sad", "worst", "poor", "broken"}
+_POSITIVE   = {"great", "awesome", "love", "excellent", "fantastic", "happy", "good", "best", "amazing"}
+_NEGATIVE   = {"bad", "terrible", "hate", "awful", "horrible", "sad", "worst", "poor", "broken"}
 _URL_RE     = re.compile(r"https?://\S+")
 _HASHTAG_RE = re.compile(r"#(\w+)")
 _MENTION_RE = re.compile(r"@(\w+)")
@@ -102,14 +116,14 @@ def enrich(raw: RawTweet) -> EnrichedTweet:
 # ── Sample data ───────────────────────────────────────────────────────────────
 
 SAMPLE_TWEETS: list[RawTweet] = [
-    RawTweet(user_handle="@alice",    text="Just tried Kafka 4.2 + #Confluent 8.2 — amazing KRaft performance! 🚀 https://confluent.io", retweet_count=12, like_count=47),
-    RawTweet(user_handle="@bob_dev",  text="Running @Podman containers is great for local Kafka dev. @alice agree?",                     retweet_count=3,  like_count=21),
-    RawTweet(user_handle="@charlie",  text="Terrible flaky tests today. Nothing is working. #devlife",                                    retweet_count=5,  like_count=8),
-    RawTweet(user_handle="@diana_ml", text="Attending #KafkaSummit next week! @bob_dev @alice will you be there?",                        retweet_count=2,  like_count=15),
-    RawTweet(user_handle="@eve",      text="The new #Pydantic v2 is the best — love the performance gains over v1!",                      retweet_count=8,  like_count=60),
-    RawTweet(user_handle="@frank",    text="Worst deployment ever. Bad config, broken pipelines. Everything is sad.",                     retweet_count=0,  like_count=3),
-    RawTweet(user_handle="@grace_ai", text="Fascinating paper on LLMs dropping today! Check it out https://arxiv.org #AI #ML",            retweet_count=34, like_count=120),
-    RawTweet(user_handle="@henry",    text="#Podman 5.8 + cp-kafka:8.2.0 — smooth setup with no ZooKeeper needed. Excellent work!",       retweet_count=7,  like_count=33),
+    RawTweet(user_handle="@alice",    text="Just tried Kafka 8.2 + #Confluent — amazing KRaft performance! 🚀 https://confluent.io",  retweet_count=12, like_count=47),
+    RawTweet(user_handle="@bob_dev",  text="Running @Podman containers is great for local Kafka dev. @alice agree?",                  retweet_count=3,  like_count=21),
+    RawTweet(user_handle="@charlie",  text="Terrible flaky tests today. Nothing is working. #devlife",                                retweet_count=5,  like_count=8),
+    RawTweet(user_handle="@diana_ml", text="Attending #KafkaSummit next week! @bob_dev @alice will you be there?",                    retweet_count=2,  like_count=15),
+    RawTweet(user_handle="@eve",      text="The new #Pydantic v2 is the best — love the performance gains over v1!",                  retweet_count=8,  like_count=60),
+    RawTweet(user_handle="@frank",    text="Worst deployment ever. Bad config, broken pipelines. Everything is sad.",                 retweet_count=0,  like_count=3),
+    RawTweet(user_handle="@grace_ai", text="Fascinating paper on LLMs dropping today! Check it out https://arxiv.org #AI #ML",        retweet_count=34, like_count=120),
+    RawTweet(user_handle="@henry",    text="#Podman 5.x + cp-kafka:8.2.0 — smooth setup with no ZooKeeper needed. Excellent work!",   retweet_count=7,  like_count=33),
 ]
 
 
@@ -155,11 +169,10 @@ async def run_producer() -> None:
 # ── Consumer / transformer coroutine ─────────────────────────────────────────
 
 async def run_consumer() -> None:
-    consumer = Consumer(consumer_config("tweet-processor-group"))
-    consumer.subscribe([RAW_TOPIC])
-
+    consumer         = Consumer(consumer_config("tweet-processor-group"))
     forward_producer = Producer(producer_config())
 
+    consumer.subscribe([RAW_TOPIC])
     logger.info(
         "Tweet processor started — consuming: '%s'  forwarding: '%s'",
         RAW_TOPIC, ENRICHED_TOPIC,
@@ -232,13 +245,6 @@ async def run_pipeline() -> None:
     await asyncio.gather(run_producer(), run_consumer())
 
 
-# ── Signal handling ───────────────────────────────────────────────────────────
-
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown.set)
-
-
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -251,17 +257,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    _install_signal_handlers(loop)
-
     modes = {
         "produce":  run_producer,
         "consume":  run_consumer,
         "pipeline": run_pipeline,
     }
 
-    try:
-        loop.run_until_complete(modes[args.mode]())
-    finally:
-        loop.close()
+    asyncio.run(modes[args.mode]())

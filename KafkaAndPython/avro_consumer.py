@@ -2,14 +2,18 @@
 avro_consumer.py — Avro-deserialised Kafka consumer.
 
 Fetches the schema automatically from the local Schema Registry container
-(http://localhost:8081) when KAFKA_ENV=local, or from Confluent Cloud SR
-when KAFKA_ENV=cloud.
+(http://localhost:8081) when KAFKA_ENV=local, or Confluent Cloud SR when
+KAFKA_ENV=cloud.
+
+Windows-compatible: uses signal.signal() + threading.Event instead of
+loop.add_signal_handler() which is Unix-only.
 """
 
 import asyncio
 import logging
 import os
 import signal
+import threading
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 from confluent_kafka.schema_registry import SchemaRegistryClient
@@ -27,12 +31,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_shutdown = asyncio.Event()
+# ── Signal handling (Windows + Unix) ─────────────────────────────────────────
+_shutdown = threading.Event()
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown.set)
+def _handle_signal(sig, frame) -> None:
+    logger.warning("Signal %s received — shutting down …", sig)
+    _shutdown.set()
+
+
+signal.signal(signal.SIGINT,  _handle_signal)
+signal.signal(signal.SIGTERM, _handle_signal)
 
 
 # ── Business logic ────────────────────────────────────────────────────────────
@@ -55,9 +64,8 @@ async def consume_avro_messages(
     topic: str,
     group_id: str = "avro-consumer-group",
 ) -> None:
-    sr_client = SchemaRegistryClient(schema_registry_config())
-    # schema_str=None → schema is resolved via magic bytes from the registry
-    avro_deserializer = AvroDeserializer(sr_client)
+    sr_client        = SchemaRegistryClient(schema_registry_config())
+    avro_deserializer = AvroDeserializer(sr_client)   # schema resolved via magic bytes
 
     consumer = Consumer(consumer_config(group_id))
     consumer.subscribe([topic])
@@ -102,12 +110,4 @@ async def consume_avro_messages(
 
 if __name__ == "__main__":
     TOPIC = os.getenv("TOPIC_NAME", "telemetry-events")
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    _install_signal_handlers(loop)
-
-    try:
-        loop.run_until_complete(consume_avro_messages(TOPIC))
-    finally:
-        loop.close()
+    asyncio.run(consume_avro_messages(TOPIC))

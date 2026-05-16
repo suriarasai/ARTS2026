@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 # ── Pydantic model ─────────────────────────────────────────────────────────────
 
 class SensorReading(BaseModel):
-    reading_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    sensor_id: str
-    location: str
+    reading_id:  str   = Field(default_factory=lambda: str(uuid.uuid4()))
+    sensor_id:   str
+    location:    str
     temperature: float
-    humidity: float
-    timestamp: int = Field(default_factory=lambda: int(time.time() * 1000))
+    humidity:    float
+    timestamp:   int   = Field(default_factory=lambda: int(time.time() * 1000))
 
     @field_validator("temperature")
     @classmethod
@@ -80,8 +80,10 @@ async def produce_json_messages(topic: str, readings: list[SensorReading]) -> No
                 on_delivery=_delivery_report,
             )
             producer.poll(0)
-            logger.info("Queued sensor_id=%s  temp=%.1f°C  hum=%.1f%%",
-                        reading.sensor_id, reading.temperature, reading.humidity)
+            logger.info(
+                "Queued sensor_id=%s  temp=%.1f°C  hum=%.1f%%",
+                reading.sensor_id, reading.temperature, reading.humidity,
+            )
             await asyncio.sleep(0.05)
 
         logger.info("Flushing …")

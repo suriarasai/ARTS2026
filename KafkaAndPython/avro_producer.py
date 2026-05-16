@@ -2,7 +2,7 @@
 avro_producer.py — Avro-serialised Kafka producer.
 
 Registers the TelemetryEvent schema with the local Schema Registry container
-(http://localhost:8081) when KAFKA_ENV=local, or with Confluent Cloud SR when
+(http://localhost:8081) when KAFKA_ENV=local, or Confluent Cloud SR when
 KAFKA_ENV=cloud.
 """
 
@@ -63,18 +63,21 @@ def _delivery_report(err, msg) -> None:
 # ── Producer ──────────────────────────────────────────────────────────────────
 
 async def produce_avro_messages(topic: str) -> None:
-    sr_client = SchemaRegistryClient(schema_registry_config())
+    sr_client      = SchemaRegistryClient(schema_registry_config())
     avro_serializer = AvroSerializer(sr_client, TELEMETRY_SCHEMA_STR, _to_dict)
+    producer        = Producer(producer_config())
 
-    producer = Producer(producer_config())
-    logger.info("Avro producer ready — topic: %s  SR: %s", topic, schema_registry_config()["url"])
+    logger.info(
+        "Avro producer ready — topic: %s  SR: %s",
+        topic, schema_registry_config()["url"],
+    )
 
     sample_events = [
         {
-            "event_id": f"evt-{i:04d}",
+            "event_id":  f"evt-{i:04d}",
             "device_id": f"device-{i % 5:03d}",
-            "metric": "cpu_usage",
-            "value": round(20.0 + i * 1.5, 2),
+            "metric":    "cpu_usage",
+            "value":     round(20.0 + i * 1.5, 2),
             "timestamp": int(time.time() * 1000),
         }
         for i in range(8)
@@ -93,7 +96,10 @@ async def produce_avro_messages(topic: str) -> None:
                 on_delivery=_delivery_report,
             )
             producer.poll(0)
-            logger.info("Queued event_id=%s  device=%s", event["event_id"], event["device_id"])
+            logger.info(
+                "Queued event_id=%s  device=%s  value=%.2f",
+                event["event_id"], event["device_id"], event["value"],
+            )
             await asyncio.sleep(0.1)
 
         logger.info("Flushing …")

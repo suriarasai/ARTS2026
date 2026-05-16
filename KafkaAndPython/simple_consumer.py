@@ -3,12 +3,16 @@ simple_consumer.py — Plain-text Kafka consumer.
 
 Works against both the local Podman containers (KAFKA_ENV=local, default)
 and Confluent Cloud (KAFKA_ENV=cloud).
+
+Windows-compatible signal handling: uses signal.signal() + threading.Event
+instead of loop.add_signal_handler() which is Unix-only.
 """
 
 import asyncio
 import logging
 import os
 import signal
+import threading
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 from dotenv import load_dotenv
@@ -23,12 +27,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_shutdown = asyncio.Event()
+# ── Signal handling (Windows + Unix) ─────────────────────────────────────────
+# threading.Event is safe to set from a signal handler on all platforms.
+# loop.add_signal_handler() is Unix-only and raises NotImplementedError on Windows.
+_shutdown = threading.Event()
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown.set)
+def _handle_signal(sig, frame) -> None:
+    logger.warning("Signal %s received — shutting down …", sig)
+    _shutdown.set()
+
+
+signal.signal(signal.SIGINT,  _handle_signal)
+signal.signal(signal.SIGTERM, _handle_signal)
 
 
 # ── Message handler ───────────────────────────────────────────────────────────
@@ -64,7 +75,7 @@ async def consume_messages(
                     raise KafkaException(msg.error())
                 continue
 
-            key = msg.key().decode() if msg.key() else None
+            key   = msg.key().decode() if msg.key() else None
             value = msg.value().decode()
 
             logger.info(
@@ -88,12 +99,4 @@ async def consume_messages(
 
 if __name__ == "__main__":
     TOPIC = os.getenv("TOPIC_NAME", "telemetry-events")
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    _install_signal_handlers(loop)
-
-    try:
-        loop.run_until_complete(consume_messages(TOPIC))
-    finally:
-        loop.close()
+    asyncio.run(consume_messages(TOPIC))

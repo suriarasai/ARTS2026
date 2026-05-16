@@ -53,7 +53,7 @@ async def produce_messages(topic: str, messages: list[str]) -> None:
                 value=payload.encode(),
                 on_delivery=_delivery_report,
             )
-            producer.poll(0)        # trigger delivery callbacks without blocking
+            producer.poll(0)
             await asyncio.sleep(0.1)
 
         logger.info("Flushing …")
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     TOPIC = os.getenv("TOPIC_NAME", "telemetry-events")
     ts = int(time.time())
     sample_messages = [
-        f"Hello Kafka 4.2 — message #{i:02d} (ts={ts})"
+        f"Hello Kafka 8.2 — message #{i:02d} (ts={ts})"
         for i in range(10)
     ]
     asyncio.run(produce_messages(TOPIC, sample_messages))

@@ -1,0 +1,25 @@
+# .env — local Podman environment settings
+# Copy this file to your project root. Never commit secrets to git.
+
+# ── Environment selector ──────────────────────────────────────────────────────
+# "local" → Podman containers on localhost
+# "cloud" → Confluent Cloud (fill in CLOUD_* vars below)
+KAFKA_ENV=local
+
+# ── Local Podman settings ─────────────────────────────────────────────────────
+LOCAL_BOOTSTRAP_SERVERS=localhost:9092
+LOCAL_SCHEMA_REGISTRY_URL=http://localhost:8081
+
+# ── Topic names ───────────────────────────────────────────────────────────────
+TOPIC_NAME=telemetry-events
+SENSOR_TOPIC=sensor-readings
+RAW_TWEET_TOPIC=tweet-ingestion
+ENRICHED_TWEET_TOPIC=tweet-processed
+
+# ── Confluent Cloud (only needed when KAFKA_ENV=cloud) ────────────────────────
+#CLOUD_BOOTSTRAP_SERVERS=pkc-xxxxx.region.provider.confluent.cloud:9092
+#CLOUD_SASL_USERNAME=<API_KEY>
+#CLOUD_SASL_PASSWORD=<API_SECRET>
+#CLOUD_SCHEMA_REGISTRY_URL=https://psrc-xxxxx.region.provider.confluent.cloud
+#CLOUD_SCHEMA_REGISTRY_API_KEY=<SR_KEY>
+#CLOUD_SCHEMA_REGISTRY_API_SECRET=<SR_SECRET>
