@@ -1,0 +1,116 @@
+# =============================================================================
+# .gitignore — Python + Confluent Kafka + Podman Desktop project
+# =============================================================================
+
+# ── Credentials & secrets (NEVER commit these) ────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.jks
+*.p12
+secrets/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+nosetests.xml
+test-results/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+.pytype/
+.pyre/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ── PyCharm / JetBrains IDE ───────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+# Keep .idea/runConfigurations if you want to share run configs with the team:
+# !.idea/runConfigurations/
+
+# ── Podman / Docker ───────────────────────────────────────────────────────────
+# Local override compose files (passwords, port overrides, etc.)
+docker-compose.override.yml
+docker-compose.local.yml
+podman-compose.override.yml
+
+# Podman machine state (macOS/Windows local VM)
+.podman/
+~/.local/share/containers/
+
+# Named-volume data dumped locally for inspection
+volumes/
+kafka-data/
+connect-plugins/
+
+# ── Confluent / Kafka local state ─────────────────────────────────────────────
+# kraft-combined-logs written outside of a named volume during quick tests
+kraft-combined-logs/
+kafka-logs/
+zookeeper-data/      # shouldn't exist for CP 8.x, but just in case
+
+# Schema Registry local backing store (offline testing)
+schema-registry-data/
+
+# Confluent CLI credentials cache
+.confluent/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+*.log.*
+logs/
+log/
+
+# ── OS artefacts ─────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# ── Misc tooling ─────────────────────────────────────────────────────────────
+.direnv/
+.envrc          # direnv — may contain secrets
+.tool-versions  # asdf
+.tox/
+.nox/

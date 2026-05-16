@@ -8,11 +8,11 @@ streaming-pipeline patterns.
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Podman Containers                            │
 │                                                                     │
-│   ┌──────────────────────────────┐   ┌──────────────────────────┐  │
-│   │   Kafka Broker (KRaft)       │   │   Schema Registry        │  │
-│   │   confluentinc/cp-kafka:8.2  │   │   cp-schema-registry:8.2 │  │
-│   │   localhost:9092             │   │   localhost:8081         │  │
-│   └──────────────────────────────┘   └──────────────────────────┘  │
+│   ┌──────────────────────────────┐   ┌──────────────────────────┐   │
+│   │   Kafka Broker (KRaft)       │   │   Schema Registry        │   │
+│   │   confluentinc/cp-kafka:8.2  │   │   cp-schema-registry:8.2 │   │
+│   │   localhost:9092             │   │   localhost:8081         │   │
+│   └──────────────────────────────┘   └──────────────────────────┘   │
 │                                                                     │
 │   ┌──────────────────────────────┐                                  │
 │   │   Kafka UI                   │                                  │
@@ -63,7 +63,7 @@ streaming-pipeline patterns.
 | Tool | Minimum Version | Purpose | Install |
 |------|----------------|---------|---------|
 | Podman Desktop | 1.9 | Container runtime for Windows | https://podman-desktop.io |
-| `docker-compose` | 2.x | Compose provider used by Podman | bundled with Docker Desktop or `winget install Docker.DockerCompose` |
+| `compose` | 2.x | Compose provider used by Podman | bundled with Docker Desktop or `winget install Docker.DockerCompose` |
 | Python | 3.12 – 3.14 | Script runtime | https://python.org/downloads |
 | pip | 24+ | Package installer | bundled with Python |
 
