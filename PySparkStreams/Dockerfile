@@ -1,5 +1,5 @@
 # Dockerfile for PySpark 3.5 LTS with ncat support
-FROM openjdk:11-jdk-slim
+FROM eclipse-temurin:11-jdk-jammy
 
 # Set environment variables
 ENV SPARK_VERSION=3.5.1

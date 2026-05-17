@@ -1,4 +1,4 @@
-@echo off
+make@echo off
 REM make.bat - PySpark 3.5 LTS Development Automation for Windows 11
 REM Usage: make.bat [command]
 REM Compatible with PyCharm IDE and Podman Desktop

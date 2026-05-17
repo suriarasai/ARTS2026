@@ -96,13 +96,12 @@ make.bat clean-all    # Clean everything including images
 
 2. **Configure Remote Interpreter:**
    - Open PyCharm Settings (File → Settings)
-   - Navigate to Project → Python Interpreter
-   - Click the gear icon → Add...
+   - Navigate to Python → Python Interpreter
    - Select "Docker" or "Podman"
    - Configure:
      - **Server**: podman
-     - **Image**: Use existing container `pyspark-streaming`
-     - **Python interpreter path**: `/usr/bin/python3`
+     - **Image**: Use existing container `podman-machine-default`
+
 
 3. **Set up Run Configurations:**
    - Create new Python configuration

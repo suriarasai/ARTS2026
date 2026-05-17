@@ -4,7 +4,7 @@ import json
 
 # Initialize Kafka producer
 producer = KafkaProducer(
-    bootstrap_servers=['localhost:9092']  # Replace with your Kafka broker(s)
+    bootstrap_servers=['localhost:9094']  # Replace with your Kafka broker(s)
 )
 
 # File path to read
