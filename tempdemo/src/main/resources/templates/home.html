@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Temperature Monitor</title>
+
+    <link rel="stylesheet" th:href="@{/webjars/bootstrap/css/bootstrap.min.css}"
+                               href="/webjars/bootstrap/5.3.3/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .panel-card   { border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+        .panel-header { border-radius: 12px 12px 0 0; }
+        #temperatureBadge { font-size: 2rem; font-weight: 700; min-width: 130px; }
+        #statusDot {
+            display: inline-block; width: 10px; height: 10px;
+            border-radius: 50%; background: #dc3545; margin-right: 6px;
+            transition: background 0.3s;
+        }
+        #statusDot.connected { background: #198754; }
+
+        /* canvas fills its parent exactly */
+        #lineChart { display: block; width: 100%; height: 100%; }
+
+        /* debug bar — visible on screen so you don't need the browser console */
+        #debugBar {
+            font-size: 0.75rem; font-family: monospace;
+            background: #212529; color: #adb5bd;
+            padding: 4px 12px; border-radius: 0 0 12px 12px;
+            min-height: 24px; word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid py-4 px-4">
+
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col text-center">
+            <h2 class="fw-bold">Live Temperature Monitor</h2>
+            <p class="text-muted mb-0">
+                <span id="statusDot"></span>
+                <span id="statusText">Connecting&hellip;</span>
+            </p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- ── PRODUCER PANEL ──────────────────────────────────────── -->
+        <div class="col-lg-4">
+            <div class="card panel-card h-100">
+                <div class="card-header panel-header bg-primary text-white">
+                    <h5 class="mb-0">Producer Panel</h5>
+                    <small>Publish a temperature reading to Kafka</small>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="mb-3">
+                        <label for="tempInput" class="form-label fw-semibold">
+                            Temperature value (&deg;C)
+                        </label>
+                        <input type="number" id="tempInput"
+                               class="form-control form-control-lg"
+                               placeholder="e.g. 36.5"
+                               step="0.1" min="-100" max="200">
+                        <div id="inputFeedback" class="form-text text-danger d-none"></div>
+                    </div>
+                    <button class="btn btn-primary btn-lg mt-auto" onclick="sendTemperature()">
+                        Send to Kafka
+                    </button>
+                    <div class="mt-4">
+                        <p class="fw-semibold mb-1 text-muted">Recent sends</p>
+                        <ul id="sendLog" class="list-group list-group-flush"
+                            style="max-height:220px;overflow-y:auto;font-size:.85rem"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── CONSUMER PANEL ─────────────────────────────────────── -->
+        <div class="col-lg-8">
+            <div class="card panel-card h-100">
+                <div class="card-header panel-header bg-success text-white
+                            d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">Consumer Panel</h5>
+                        <small>Real-time chart &mdash; WebSocket</small>
+                    </div>
+                    <span class="badge bg-light text-success fs-6"
+                          id="temperatureBadge">-- &deg;C</span>
+                </div>
+
+                <!-- canvas given an explicit pixel height — no library sizing quirks -->
+                <div class="card-body p-2">
+                    <canvas id="lineChart" width="800" height="360"
+                            style="width:100%;height:360px;display:block;"></canvas>
+                </div>
+
+                <div class="card-footer text-muted d-flex justify-content-between align-items-center">
+                    <small id="lastUpdate">No data yet</small>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearChart()">
+                        Clear
+                    </button>
+                </div>
+
+                <!-- on-screen debug bar: shows exactly what is happening -->
+                <div id="debugBar">ready</div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- WebJars — all served locally by Spring Boot, zero CDN -->
+<script th:src="@{/webjars/jquery/jquery.min.js}"
+            src="/webjars/jquery/3.7.1/jquery.min.js"></script>
+<script th:src="@{/webjars/sockjs-client/sockjs.min.js}"
+            src="/webjars/sockjs-client/1.5.1/sockjs.min.js"></script>
+<script th:src="@{/webjars/stomp-websocket/stomp.min.js}"
+            src="/webjars/stomp-websocket/2.3.4/stomp.min.js"></script>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PURE CANVAS CHART — zero library dependency
+   Draws directly onto the HTML5 <canvas> using the 2D context API.
+   Cannot fail due to a missing CDN, missing WebJar, or version mismatch.
+═══════════════════════════════════════════════════════════════════════════ */
+
+var MAX_POINTS  = 50;
+var chartPoints = [];          /* [{ label:'HH:mm:ss', value: number }] */
+var stompClient = null;
+
+/* ── debug output visible on screen (not just console) ── */
+function dbg(msg) {
+    var bar = document.getElementById('debugBar');
+    if (bar) bar.textContent = msg;
+    console.log('[tempdemo]', msg);
+}
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function timeLabel() {
+    var d = new Date();
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+
+/* ── Pure canvas chart renderer ──────────────────────────────────────────
+   Called after every new data point.  Redraws the entire canvas from
+   scratch each time — simple, reliable, no animation glitches.          */
+function drawChart() {
+    var canvas = document.getElementById('lineChart');
+    if (!canvas) { dbg('ERROR: canvas not found'); return; }
+    var ctx = canvas.getContext('2d');
+
+    /* sync canvas pixel size to its CSS display size */
+    var W = canvas.offsetWidth  || 800;
+    var H = canvas.offsetHeight || 360;
+    if (canvas.width  !== W) canvas.width  = W;
+    if (canvas.height !== H) canvas.height = H;
+
+    var PAD_L = 55, PAD_R = 20, PAD_T = 40, PAD_B = 50;
+    var plotW  = W - PAD_L - PAD_R;
+    var plotH  = H - PAD_T - PAD_B;
+
+    /* clear */
+    ctx.clearRect(0, 0, W, H);
+
+    /* background */
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    /* title */
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 13px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Live Temperature  —  Kafka > WebSocket > Chart', W / 2, 22);
+
+    /* axes */
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, PAD_T);
+    ctx.lineTo(PAD_L, PAD_T + plotH);
+    ctx.lineTo(PAD_L + plotW, PAD_T + plotH);
+    ctx.stroke();
+
+    /* if no data yet, show placeholder */
+    if (chartPoints.length === 0) {
+        ctx.fillStyle = '#aaa';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Waiting for data…', PAD_L + plotW / 2, PAD_T + plotH / 2);
+        return;
+    }
+
+    /* Y scale */
+    var vals   = chartPoints.map(function(p) { return p.value; });
+    var yMin   = Math.min.apply(null, vals);
+    var yMax   = Math.max.apply(null, vals);
+    var yRange = yMax - yMin || 1;
+    var yLo    = yMin - yRange * 0.15;
+    var yHi    = yMax + yRange * 0.15;
+
+    /* Y grid + labels */
+    var ySteps = 5;
+    ctx.strokeStyle = '#e9ecef';
+    ctx.fillStyle   = '#555';
+    ctx.font        = '11px Arial';
+    ctx.textAlign   = 'right';
+    for (var i = 0; i <= ySteps; i++) {
+        var yVal  = yLo + (yHi - yLo) * i / ySteps;
+        var yPx   = PAD_T + plotH - (plotH * i / ySteps);
+        ctx.beginPath();
+        ctx.moveTo(PAD_L, yPx);
+        ctx.lineTo(PAD_L + plotW, yPx);
+        ctx.stroke();
+        ctx.fillText(yVal.toFixed(1), PAD_L - 6, yPx + 4);
+    }
+
+    /* Y axis label */
+    ctx.save();
+    ctx.translate(14, PAD_T + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.font = '11px Arial';
+    ctx.fillStyle = '#555';
+    ctx.fillText('Temperature (°C)', 0, 0);
+    ctx.restore();
+
+    /* X labels (show up to 8 evenly spaced) */
+    var pts  = chartPoints;
+    var nPts = pts.length;
+    var step = Math.max(1, Math.ceil(nPts / 8));
+    ctx.fillStyle   = '#555';
+    ctx.font        = '10px Arial';
+    ctx.textAlign   = 'center';
+    for (var j = 0; j < nPts; j += step) {
+        var xPx = PAD_L + (plotW * j / (nPts - 1 || 1));
+        ctx.fillText(pts[j].label, xPx, PAD_T + plotH + 18);
+    }
+    /* always show last label */
+    ctx.fillText(pts[nPts - 1].label, PAD_L + plotW, PAD_T + plotH + 18);
+
+    /* X axis label */
+    ctx.fillStyle = '#555';
+    ctx.font = '11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Time (HH:mm:ss)', PAD_L + plotW / 2, H - 4);
+
+    /* filled area under line */
+    ctx.beginPath();
+    for (var k = 0; k < nPts; k++) {
+        var px = PAD_L + (plotW * k / (nPts - 1 || 1));
+        var py = PAD_T + plotH - (plotH * (pts[k].value - yLo) / (yHi - yLo));
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    /* close fill path to baseline */
+    ctx.lineTo(PAD_L + plotW, PAD_T + plotH);
+    ctx.lineTo(PAD_L, PAD_T + plotH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 99, 132, 0.15)';
+    ctx.fill();
+
+    /* line */
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgb(255, 99, 132)';
+    ctx.lineWidth   = 2;
+    ctx.lineJoin    = 'round';
+    for (var m = 0; m < nPts; m++) {
+        var lx = PAD_L + (plotW * m / (nPts - 1 || 1));
+        var ly = PAD_T + plotH - (plotH * (pts[m].value - yLo) / (yHi - yLo));
+        if (m === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+    }
+    ctx.stroke();
+
+    /* dots */
+    ctx.fillStyle = 'rgb(255, 99, 132)';
+    for (var n = 0; n < nPts; n++) {
+        var dx = PAD_L + (plotW * n / (nPts - 1 || 1));
+        var dy = PAD_T + plotH - (plotH * (pts[n].value - yLo) / (yHi - yLo));
+        ctx.beginPath();
+        ctx.arc(dx, dy, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function addPoint(label, value) {
+    chartPoints.push({ label: label, value: value });
+    if (chartPoints.length > MAX_POINTS) chartPoints.shift();
+    drawChart();
+    dbg('points=' + chartPoints.length + '  last=' + value + ' °C  @ ' + label);
+}
+
+function clearChart() {
+    chartPoints = [];
+    drawChart();
+    document.getElementById('temperatureBadge').textContent = '-- °C';
+    document.getElementById('lastUpdate').textContent = 'No data yet';
+    dbg('chart cleared');
+}
+
+/* ── WebSocket / STOMP ───────────────────────────────────────────────────── */
+function connect() {
+    dbg('opening SockJS /live-temperature …');
+    var socket = new SockJS('/live-temperature');
+    stompClient = Stomp.over(socket);
+    stompClient.debug = null;
+
+    stompClient.connect({}, function onConnected(frame) {
+        dbg('STOMP connected — subscribing /topic/temperature');
+        setStatus(true);
+
+        stompClient.subscribe('/topic/temperature', function onMessage(msg) {
+            var raw  = (msg.body || '').trim();
+            var temp = parseFloat(raw);
+            if (isNaN(temp)) { dbg('ignored non-numeric: ' + raw); return; }
+
+            var label = timeLabel();
+            document.getElementById('temperatureBadge').textContent =
+                temp.toFixed(1) + ' \u00b0C';
+            document.getElementById('lastUpdate').textContent =
+                'Last update: ' + label;
+            addPoint(label, temp);
+        });
+
+    }, function onError(err) {
+        dbg('STOMP error — retrying in 5 s: ' + err);
+        setStatus(false);
+        setTimeout(connect, 5000);
+    });
+}
+
+function setStatus(connected) {
+    document.getElementById('statusDot').classList.toggle('connected', connected);
+    document.getElementById('statusText').textContent = connected
+        ? 'Connected \u2014 listening for Kafka messages'
+        : 'Disconnected \u2014 retrying\u2026';
+}
+
+/* ── Producer panel ──────────────────────────────────────────────────────── */
+function sendTemperature() {
+    var input    = document.getElementById('tempInput');
+    var feedback = document.getElementById('inputFeedback');
+    var value    = input.value.trim();
+
+    feedback.classList.add('d-none');
+    if (value === '' || isNaN(parseFloat(value))) {
+        feedback.textContent = 'Please enter a valid numeric temperature.';
+        feedback.classList.remove('d-none');
+        return;
+    }
+
+    $.ajax({
+        url        : '/api/temperature',
+        method     : 'POST',
+        contentType: 'application/json',
+        data       : JSON.stringify({ value: value }),
+        success: function() { addSendLog(value, 'success'); input.value = ''; },
+        error  : function(xhr) {
+            addSendLog(value, 'danger', xhr.responseText || 'server error');
+        }
+    });
+}
+
+function addSendLog(value, type, errMsg) {
+    var log = document.getElementById('sendLog');
+    var li  = document.createElement('li');
+    var t   = timeLabel();
+    li.className = 'list-group-item list-group-item-' + type + ' py-1 px-2';
+    li.innerHTML = (type === 'success')
+        ? '<b>' + value + ' \u00b0C</b> sent at ' + t
+        : '<b>' + value + '</b> \u2014 ' + errMsg + ' at ' + t;
+    log.prepend(li);
+    while (log.children.length > 20) log.removeChild(log.lastChild);
+}
+
+document.getElementById('tempInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendTemperature();
+});
+
+/* ── Bootstrap ───────────────────────────────────────────────────────────── */
+$(document).ready(function () {
+    dbg('DOM ready — drawing initial chart');
+    drawChart();    /* draw empty chart with "Waiting for data..." */
+    connect();      /* open WebSocket */
+    /* resize chart if window size changes */
+    window.addEventListener('resize', drawChart);
+});
+</script>
+
+</body>
+</html>
