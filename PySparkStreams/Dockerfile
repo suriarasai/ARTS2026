@@ -7,7 +7,7 @@ ENV HADOOP_VERSION=3
 ENV SPARK_HOME=/opt/spark
 ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip
 ENV PATH=$SPARK_HOME/bin:$PATH
-ENV JAVA_HOME=/usr/local/openjdk-11
+ENV JAVA_HOME=/opt/java/openjdk
 ENV PYSPARK_PYTHON=python3
 ENV PYSPARK_DRIVER_PYTHON=python3
 
