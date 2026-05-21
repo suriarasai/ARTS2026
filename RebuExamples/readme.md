@@ -22,7 +22,7 @@ CSV Data → Kafka Producer → Kafka Topic → PySpark Consumers
 ## Project Folder Structure
 
 ```
-kafka-pyspark-streaming/
+RebuExamples/
 ├── podman-compose.yml          # Infrastructure setup
 ├── Dockerfile                  # PySpark application container
 ├── requirements.txt            # Python dependencies

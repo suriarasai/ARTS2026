@@ -1,0 +1,5 @@
+# .dockerignore
+   java_fix.sh
+   *.sh
+   .venv
+   __pycache__
