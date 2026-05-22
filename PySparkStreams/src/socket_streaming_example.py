@@ -72,7 +72,7 @@ def socket_streaming_example():
 
         # Write to console
         query = processed_df.writeStream \
-            .outputMode("append") \
+            .outputMode("socket") \
             .format("console") \
             .option("truncate", False) \
             .trigger(processingTime='5 seconds') \

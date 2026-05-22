@@ -11,7 +11,7 @@ spark = SparkSession \
 
 raw_df = spark.readStream \
         .format("csv") \
-        .option("path", "rebu\\booking") \
+        .option("path", "data\\rebu\\booking") \
         .option("maxFilesPerTrigger", 1) \
         .option("inferSchema", "True") \
         .load()

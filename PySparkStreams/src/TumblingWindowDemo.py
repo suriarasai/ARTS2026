@@ -31,7 +31,7 @@ trade_df = value_df.select("value.*") \
 
 window_agg_df = trade_df \
     .groupBy(  # col("BrokerCode"),
-    window(col("CreatedTime"), "15 minute")) \
+    window(col("CreatedTime"), "10 minute")) \
     .agg(sum("Buy").alias("TotalBuy"),
          sum("Sell").alias("TotalSell"))
 
@@ -50,9 +50,9 @@ final_output_df.show(truncate=False)
 '''
 window_query = output_df.writeStream \
     .format("console") \
-    .outputMode("update") \
+    .outputMode("complete") \
     .option("checkpointLocation", "chk-point-dir-trades") \
-    .trigger(processingTime="10 seconds") \
+    .trigger(processingTime="2 seconds") \
     .start()
 
 window_query.awaitTermination()

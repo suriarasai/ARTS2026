@@ -29,6 +29,7 @@ query = wordCounts \
     .writeStream \
     .outputMode("update") \
     .format("console") \
+    .trigger(processingTime='1 seconds') \
     .start()
 
 query.awaitTermination()
